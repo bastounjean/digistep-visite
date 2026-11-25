@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="fr">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta charset="utf-8">
+<title>DIGISTEP</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="DIGISTEP – station d'évaluation autonome de la capacité cardiorespiratoire.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: a fixed cinematic canvas (pre-rendered Blender camera path) scrubbed by scroll; chapters float over it as glass cards. Single dark look by choice. */
+:root {
+  --navy: #1c1240;
+  --navy-glass: rgba(28, 18, 64, 0.74);
+  --coral: #ff9214;
+  --coral-soft: #ffb547;
+  --paper: #f7f4ff;
+  --mist: #bfb2e0;
+  --line: rgba(240, 234, 255, 0.18);
+  --f-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "Instrument Sans", "Inter", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: auto; }
+body { margin: 0; background: var(--navy); color: var(--paper); font-family: var(--f-body); font-size: 16px; line-height: 1.55; }
+
+#stage { position: fixed; inset: 0; z-index: 0; background: var(--navy); }
+#stage canvas { width: 100%; height: 100%; display: block; }
+#stage::after { /* soft vignette so cards read on bright frames */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(20, 10, 48, 0.5) 100%);
+}
+
+#loader {
+  position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: var(--navy);
+  transition: opacity .6s ease;
+}
+#loader.done { opacity: 0; pointer-events: none; }
+#loader .in { display: grid; gap: 14px; justify-items: center; }
+#loader .brand { font-family: var(--f-display); font-weight: 900; font-stretch: 112%; font-size: 28px; letter-spacing: 0.04em; }
+#loader .bar { width: 200px; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+#loader .bar i { display: block; height: 100%; width: 0; background: var(--coral); transition: width .2s; }
+#loader small { font-family: var(--f-mono); font-size: 12px; color: var(--mist); }
+
+header.top {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 16px); padding-bottom: 16px;
+  padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px));
+  pointer-events: none;
+}
+.logo { font-family: var(--f-display); font-weight: 900; font-stretch: 115%; letter-spacing: 0.05em; font-size: 18px; color: var(--paper); display: flex; align-items: center; gap: 10px; text-shadow: 0 1px 12px rgba(0,0,0,.35); }
+.logo svg { width: 26px; height: 16px; }
+.chapters { display: flex; gap: 6px; pointer-events: auto; }
+.chapters a { display: block; width: 26px; height: 4px; border-radius: 2px; background: rgba(244,246,249,.35); }
+.chapters a.on { background: var(--coral); }
+.chapters a:focus-visible { outline: 2px solid var(--coral-soft); outline-offset: 4px; }
+
+/* HUD : live step height, visible during the rise chapter */
+#hud {
+  position: fixed; z-index: 15; right: max(24px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+  display: grid; grid-template-columns: auto auto; gap: 4px 14px; align-items: end;
+  padding: 14px 18px; border-radius: 14px; background: var(--navy-glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--line); transition: opacity .4s, transform .4s; opacity: 0; transform: translateY(10px);
+}
+#hud.show { opacity: 1; transform: none; }
+#hud .lab { grid-column: 1 / -1; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--mist); }
+#hud .val { font-family: var(--f-display); font-weight: 800; font-stretch: 90%; font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; }
+#hud .val small { font-size: 18px; color: var(--coral-soft); margin-left: 4px; }
+#hud .gauge { width: 8px; height: 52px; background: var(--line); border-radius: 4px; position: relative; overflow: hidden; }
+#hud .gauge i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--coral); border-radius: 4px; }
+
+/* scroll track */
+main { position: relative; z-index: 10; }
+.chap {
+  min-height: 100vh; display: flex; align-items: center;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 18vh;
+}
+.chap.tall { min-height: 170vh; align-items: flex-start; }
+.chap.tall .card { position: sticky; top: 22vh; }
+.chap.right { justify-content: flex-end; }
+.wrap { width: 100%; max-width: 1180px; margin-inline: auto; display: flex; }
+.chap.right .wrap { justify-content: flex-end; }
+
+.card {
+  width: min(440px, 100%); padding: 26px 28px; border-radius: 18px;
+  background: var(--navy-glass); backdrop-filter: blur(16px) saturate(1.2); -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid var(--line); box-shadow: 0 30px 60px -30px rgba(0,0,0,.6);
+  display: grid; gap: 14px;
+}
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; color: var(--coral-soft); text-transform: uppercase; }
+h1, h2 { font-family: var(--f-display); text-wrap: balance; margin: 0; }
+h2 { font-weight: 800; font-stretch: 92%; font-size: clamp(28px, 3.4vw, 40px); line-height: 1.04; letter-spacing: -0.01em; }
+.card p { margin: 0; color: #e4ddf7; max-width: 62ch; }
+dl.specs { margin: 4px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border-radius: 12px; overflow: hidden; }
+dl.specs div { background: rgba(28, 18, 64, .86); padding: 12px 14px; display: grid; gap: 2px; }
+dl.specs dt { font-size: 11.5px; color: var(--mist); letter-spacing: .02em; }
+dl.specs dd { margin: 0; font-family: var(--f-display); font-weight: 700; font-stretch: 95%; font-size: 21px; font-variant-numeric: tabular-nums; }
+dl.specs dd small { font-family: var(--f-body); font-weight: 500; font-size: 13px; color: var(--mist); margin-left: 3px; }
+.flow { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; counter-reset: s; }
+.flow li { counter-increment: s; display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: baseline; color: #e4ddf7; }
+.flow li::before { content: counter(s); font-family: var(--f-mono); font-size: 12px; color: var(--navy); background: var(--coral-soft); border-radius: 50%; width: 22px; height: 22px; display: grid; place-items: center; }
+
+/* hero */
+.hero { min-height: 100vh; align-items: flex-end; padding-block: 12vh 5vh; }
+.hero .wrap { flex-direction: column; gap: 18px; }
+.hero h1 {
+  font-weight: 900; font-stretch: 125%; font-size: clamp(52px, 8.5vw, 128px); line-height: .86; letter-spacing: -0.015em;
+  color: var(--navy); text-shadow: 0 2px 30px rgba(255, 255, 255, .55);
+}
+.hero h1 span { color: var(--coral); }
+.hero .lede { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-end; justify-content: space-between; }
+.hero .lede p { margin: 0; font-size: clamp(17px, 1.6vw, 21px); max-width: 34ch; padding: 14px 18px; border-radius: 14px; background: var(--navy-glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--line); }
+.scrollcue { font-family: var(--f-mono); font-size: 12px; color: var(--paper); display: flex; gap: 10px; align-items: center; padding: 10px 14px; background: var(--navy-glass); border-radius: 999px; border: 1px solid var(--line); }
+.scrollcue i { width: 1px; height: 22px; background: var(--coral); animation: cue 1.6s ease-in-out infinite; transform-origin: top; }
+@keyframes cue { 0% { transform: scaleY(0); } 50% { transform: scaleY(1); } 100% { transform: scaleY(0); transform-origin: bottom; } }
+
+/* outro */
+.outro { min-height: 120vh; align-items: flex-end; padding-bottom: 12vh; }
+.outro .wrap { flex-direction: column; gap: 20px; }
+.outro .big { font-family: var(--f-display); font-weight: 900; font-stretch: 118%; font-size: clamp(40px, 7vw, 104px); line-height: .9; margin: 0; text-wrap: balance; text-shadow: 0 6px 40px rgba(6,12,24,.5); }
+.outro .big em { font-style: normal; color: var(--coral); }
+.team { display: flex; flex-wrap: wrap; gap: 18px 40px; align-items: flex-start; justify-content: space-between; padding: 22px 26px; border-radius: 18px; background: var(--navy-glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--line); }
+.team h3 { margin: 0 0 6px; font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--mist); font-weight: 600; }
+.team p { margin: 0; color: #e4ddf7; }
+.team > div { min-width: 0; }
+.proto img { display: block; width: 160px; height: auto; margin-bottom: 6px; }
+
+@media (max-width: 640px) {
+  .chapters { display: none; }
+  .card { padding: 20px; }
+  dl.specs dd { font-size: 18px; }
+  .chap.right { justify-content: flex-start; }
+  #hud { left: max(16px, env(safe-area-inset-left, 0px)); right: auto; }
+  #hud .val { font-size: 34px; }
+}
+@media (prefers-reduced-motion: reduce) { .scrollcue i { animation: none; } }
+</style>
+
+<div id="stage"><canvas id="cv" aria-label="Visite 3D de la cabine DIGISTEP dans un supermarché" role="img"></canvas></div>
+
+<div id="loader"><div class="in"><span class="brand">DIGISTEP</span><span class="bar"><i id="lbar"></i></span><small id="ltxt">Chargement de la visite…</small></div></div>
+
+<header class="top">
+  <span class="logo"><svg viewBox="0 0 26 16" fill="none" stroke="#ff9214" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 9h6l2-4 3 9 3-13 2 8h8"/></svg>DIGISTEP</span>
+  <nav class="chapters" aria-label="Chapitres" id="dots"></nav>
+</header>
+
+<aside id="hud" aria-live="off">
+  <span class="lab">Hauteur du step</span>
+  <span class="val" id="hval">10.0<small>cm</small></span>
+  <span class="gauge"><i id="hg"></i></span>
+</aside>
+
+<main>
+  <section class="chap hero" data-f="1" id="accueil">
+    <div class="wrap">
+      <h1>DIGI<span>STEP</span></h1>
+      <div class="lede">
+        <p>Une cabine autonome pour évaluer votre capacité cardiorespiratoire en quelques minutes, là où vous faites vos courses.</p>
+        <span class="scrollcue"><i></i>Faites défiler pour entrer</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="chap right" data-f="44" id="cabine">
+    <div class="wrap"><div class="card">
+      <span class="eyebrow">La cabine · SEACCR</span>
+      <h2>Un espace privé, dès l’entrée du magasin</h2>
+      <p>Installée dans l’espace services, à côté des photomatons, la cabine isole l'utilisateur du bruit et des regards. Elle se monte en panneaux, se transporte en petit utilitaire et s'installe en salon, en pharmacie ou en centre commercial.</p>
+      <dl class="specs">
+        <div><dt>Emprise au sol</dt><dd>1,85 × 1,85<small>m</small></dd></div>
+        <div><dt>Hauteur</dt><dd>2,90<small>m</small></dd></div>
+        <div><dt>Surface</dt><dd>3,4<small>m² (3 ± 0,5)</small></dd></div>
+        <div><dt>Occupants</dt><dd>1 + 1<small>accompagnant</small></dd></div>
+      </dl>
+    </div></div>
+  </section>
+
+  <section class="chap" data-f="96" id="ecran">
+    <div class="wrap"><div class="card">
+      <span class="eyebrow">L'interface</span>
+      <h2>Quelques questions, puis le test commence</h2>
+      <p>La tablette intégrée guide tout le parcours CardioTest. Aucun téléphone personnel n'est nécessaire.</p>
+      <ol class="flow">
+        <li>Questionnaire sur la personne et son activité</li>
+        <li>Réglage automatique de la hauteur et de la cadence</li>
+        <li>Palier d'exercice rythmé par un signal sonore</li>
+        <li>Ressenti de l'effort, puis palier suivant</li>
+        <li>Estimation en METs et résultat</li>
+      </ol>
+    </div></div>
+  </section>
+
+  <section class="chap right tall" data-f="122" id="step">
+    <div class="wrap"><div class="card">
+      <span class="eyebrow">Le step motorisé</span>
+      <h2>Le step monte tout seul, selon vos réponses</h2>
+      <p>Deux ciseaux entraînés par un moteur ajustent la planche entre chaque palier. Plus besoin d'empiler des cales à la main : l'opérateur n'a plus à intervenir.</p>
+      <dl class="specs">
+        <div><dt>Course</dt><dd>10 → 35<small>cm</small></dd></div>
+        <div><dt>Précision</dt><dd>5<small>mm ± 2</small></dd></div>
+        <div><dt>Vitesse</dt><dd>25 cm<small>en &lt; 10 s</small></dd></div>
+        <div><dt>Charge max.</dt><dd>150<small>kg · 2290 N</small></dd></div>
+      </dl>
+    </div></div>
+  </section>
+
+  <section class="chap" data-f="196" id="mesures">
+    <div class="wrap"><div class="card">
+      <span class="eyebrow">Mesures</span>
+      <h2>Chaque pas compte, au battement près</h2>
+      <p>Des capteurs sous la planche mesurent la cadence et le poids. L'écran et le haut-parleur signalent tout écart avec le rythme demandé.</p>
+      <dl class="specs">
+        <div><dt>Cadence mesurée</dt><dd>30–270<small>pas/min ± 1</small></dd></div>
+        <div><dt>Pesée</dt><dd>40–150<small>kg · 0,1 kg</small></dd></div>
+        <div><dt>Signal sonore</dt><dd>55<small>dB ± 5</small></dd></div>
+        <div><dt>Masse du step</dt><dd>≤ 30<small>kg</small></dd></div>
+      </dl>
+    </div></div>
+  </section>
+
+  <section class="chap outro" data-f="240" id="equipe">
+    <div class="wrap">
+      <p class="big">Moins de <em>5 minutes</em> pour connaître votre forme.</p>
+      <div class="team">
+        <div><h3>Projet</h3><p>Plateau Projet 2026–2027 · Grenoble INP – Génie industriel</p></div>
+        <div><h3>Équipe</h3><p>Alexis Roche, Henrique D'Aloia, Baptiste Jean, Aly Shalaby, Anna-Lena Lohmann, Célestin Desserrey</p></div>
+        <div class="proto"><h3>Protocole</h3><img src="assets/cardiotest.png" alt="CardioTest" width="160" height="96"><p>Méthode de Daniel Mercier</p></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const N = 240;
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const imgs = new Array(N + 1);
+  const ok = new Uint8Array(N + 1);
+  let loaded = 0, settled = 0;
+
+  // ---- load frames: even frames first (coarse pass), then the rest
+  const order = [];
+  for (let f = 1; f <= N; f += 4) order.push(f);
+  for (let f = 3; f <= N; f += 4) order.push(f);
+  for (let f = 2; f <= N; f += 2) order.push(f);
+  const lbar = document.getElementById('lbar'), ltxt = document.getElementById('ltxt');
+  const loader = document.getElementById('loader');
+  const firstBatch = Math.ceil(N / 4);
+  let idx = 0, inflight = 0;
+  function pump() {
+    while (inflight < 8 && idx < order.length) {
+      const f = order[idx++]; inflight++;
+      const im = new Image();
+      im.decoding = 'async';
+      im.onload = () => { ok[f] = 1; imgs[f] = im; loaded++; done(); };
+      im.onerror = () => { done(); };
+      im.src = 'frames/' + String(f).padStart(4, '0') + '.jpg';
+    }
+  }
+  function done() {
+    inflight--; settled++;
+    const p = Math.min(1, settled / firstBatch);
+    lbar.style.width = (p * 100).toFixed(0) + '%';
+    if (settled >= firstBatch && !loader.classList.contains('done')) { loader.classList.add('done'); }
+    pump(); needDraw = true;
+  }
+  pump();
+
+  function nearest(f) {
+    f = Math.round(f);
+    for (let d = 0; d < N; d++) {
+      if (f - d >= 1 && ok[f - d]) return f - d;
+      if (f + d <= N && ok[f + d]) return f + d;
+    }
+    return 0;
+  }
+
+  // ---- size
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(innerHeight * dpr);
+    needDraw = true;
+  }
+  addEventListener('resize', resize);
+
+  // ---- scroll → frame mapping via chapter anchors (data-f)
+  const secs = [...document.querySelectorAll('section[data-f]')];
+  const dots = document.getElementById('dots');
+  secs.forEach((s, i) => {
+    const a = document.createElement('a'); a.href = '#' + s.id; a.setAttribute('aria-label', s.querySelector('h1,h2,.big')?.textContent.trim() || s.id);
+    a.addEventListener('click', e => { e.preventDefault(); scrollTo({ top: anchorY(i), behavior: 'smooth' }); });
+    dots.appendChild(a);
+  });
+  function anchorY(i) {
+    const s = secs[i];
+    if (i === 0) return 0;
+    if (i === secs.length - 1) return document.documentElement.scrollHeight - innerHeight;
+    return s.offsetTop + s.offsetHeight / 2 - innerHeight / 2;
+  }
+  function targetFrame() {
+    const y = scrollY;
+    const ys = secs.map((_, i) => anchorY(i));
+    const fs = secs.map(s => +s.dataset.f);
+    if (y <= ys[0]) return fs[0];
+    for (let i = 0; i < ys.length - 1; i++) {
+      if (y <= ys[i + 1]) { const t = (y - ys[i]) / Math.max(1, ys[i + 1] - ys[i]); return fs[i] + (fs[i + 1] - fs[i]) * t; }
+    }
+    return fs[fs.length - 1];
+  }
+
+  // ---- step height (same curve as the Blender animation)
+  const sm = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+  function stepH(f) {
+    if (f < 120) return 10;
+    if (f < 150) return 10 + 12 * sm((f - 120) / 30);
+    if (f < 160) return 22;
+    if (f < 192) return 22 + 13 * sm((f - 160) / 32);
+    return 35;
+  }
+  const hud = document.getElementById('hud'), hval = document.getElementById('hval'), hg = document.getElementById('hg');
+
+  // ---- render loop
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let cur = 1, needDraw = true, lastDrawn = -1, lastChap = -1;
+  function draw(f) {
+    const a = nearest(Math.round(f));
+    if (!a) return;
+    const W = cv.width, H = cv.height;
+    const fit = im => { const s = Math.max(W / im.naturalWidth, H / im.naturalHeight); const w = im.naturalWidth * s, h = im.naturalHeight * s; return [(W - w) / 2, (H - h) / 2, w, h]; };
+    ctx.globalAlpha = 1; ctx.drawImage(imgs[a], ...fit(imgs[a]));
+  }
+  function tick() {
+    const tgt = targetFrame();
+    cur += (tgt - cur) * (reduce ? 1 : 0.14);
+    if (Math.abs(tgt - cur) < 0.01) cur = tgt;
+    if (needDraw || Math.abs(cur - lastDrawn) > 0.005) { draw(cur); lastDrawn = cur; needDraw = false; }
+    const h = stepH(cur);
+    hval.firstChild.nodeValue = h.toFixed(1);
+    hg.style.height = ((h - 10) / 25 * 100).toFixed(1) + '%';
+    hud.classList.toggle('show', cur > 112 && cur < 214);
+    let ci = 0, best = Infinity; secs.forEach((_, i) => { const d = Math.abs(scrollY - anchorY(i)); if (d < best) { best = d; ci = i; } });
+    if (ci !== lastChap) { [...dots.children].forEach((d, i) => d.classList.toggle('on', i === ci)); lastChap = ci; }
+    requestAnimationFrame(tick);
+  }
+  resize();
+  requestAnimationFrame(tick);
+})();
+</script>
+
+</html>
